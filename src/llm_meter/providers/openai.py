@@ -2,7 +2,11 @@ import functools
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
+
+if TYPE_CHECKING:
+    from openai.types import CompletionUsage
+    from openai.types.chat import ChatCompletion
 
 from llm_meter.context import AttributionContext, get_current_context
 from llm_meter.models import LLMUsage
@@ -22,7 +26,7 @@ class OpenAIUsage(Protocol):
 @runtime_checkable
 class OpenAIResponse(Protocol):
     model: str
-    usage: OpenAIUsage
+    usage: "CompletionUsage | OpenAIUsage"
 
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -41,7 +45,7 @@ def instrument_openai_call(provider: str, storage_callback: Callable[[LLMUsage],
             return func
 
         @functools.wraps(func)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> OpenAIResponse:
+        async def async_wrapper(*args: Any, **kwargs: Any) -> "ChatCompletion | OpenAIResponse":
             start_time = time.perf_counter()
             ctx = get_current_context()
 
@@ -53,9 +57,9 @@ def instrument_openai_call(provider: str, storage_callback: Callable[[LLMUsage],
                 model = response.model
                 usage = response.usage
 
-                input_tokens = usage.prompt_tokens
-                output_tokens = usage.completion_tokens
-                total_tokens = usage.total_tokens
+                input_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
+                output_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+                total_tokens = getattr(usage, "total_tokens", 0) if usage else 0
 
                 cost = calculate_cost(model, input_tokens, output_tokens)
 
@@ -133,9 +137,11 @@ class OpenAIClientInstrumenter:
             else:
                 self.client.chat.completions.create = self._wrap_sync(original_create)
 
-    def _wrap_async(self, func: Callable[..., Awaitable[OpenAIResponse]]) -> Callable[..., Awaitable[OpenAIResponse]]:
+    def _wrap_async(
+        self, func: Callable[..., Awaitable["ChatCompletion | OpenAIResponse"]]
+    ) -> Callable[..., Awaitable["ChatCompletion | OpenAIResponse"]]:
         @functools.wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> OpenAIResponse:
+        async def wrapper(*args: Any, **kwargs: Any) -> "ChatCompletion | OpenAIResponse":
             start_time = time.perf_counter()
             ctx = get_current_context()
             try:
@@ -148,19 +154,28 @@ class OpenAIClientInstrumenter:
 
         return wrapper
 
-    def _wrap_sync(self, func: Callable[..., OpenAIResponse]) -> Callable[..., OpenAIResponse]:
+    def _wrap_sync(
+        self, func: Callable[..., "ChatCompletion | OpenAIResponse"]
+    ) -> Callable[..., "ChatCompletion | OpenAIResponse"]:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> OpenAIResponse:
+        def wrapper(*args: Any, **kwargs: Any) -> "ChatCompletion | OpenAIResponse":
             # Note: storage callback must be sync-compatible or run in background
             # For simplicity in v1, we focus on the core wrapping logic.
             return func(*args, **kwargs)
 
         return wrapper
 
-    async def _record_success(self, response: OpenAIResponse, start_time: float, ctx: AttributionContext) -> None:
+    async def _record_success(
+        self, response: "ChatCompletion | OpenAIResponse", start_time: float, ctx: AttributionContext
+    ) -> None:
         latency = int((time.perf_counter() - start_time) * 1000)
         u = response.usage
-        cost = calculate_cost(response.model, u.prompt_tokens, u.completion_tokens)
+
+        input_tokens = getattr(u, "prompt_tokens", 0) if u else 0
+        output_tokens = getattr(u, "completion_tokens", 0) if u else 0
+        total_tokens = getattr(u, "total_tokens", 0) if u else 0
+
+        cost = calculate_cost(response.model, input_tokens, output_tokens)
 
         record = LLMUsage(
             request_id=ctx.request_id,
@@ -170,9 +185,9 @@ class OpenAIClientInstrumenter:
             job_id=ctx.job_id,
             provider="openai",
             model=response.model,
-            input_tokens=u.prompt_tokens,
-            output_tokens=u.completion_tokens,
-            total_tokens=u.total_tokens,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
             cost_estimate=cost,
             latency_ms=latency,
             status="success",
