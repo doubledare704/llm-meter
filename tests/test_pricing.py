@@ -20,8 +20,8 @@ def test_calculate_cost_unknown_model():
 
 
 def test_calculate_cost_small_amounts():
-    # gpt-4o-mini: 0.00015 input, 0.0006 output
+    # gpt-4o-mini: 0.00015 input, 0.0003 output
     cost = calculate_cost("gpt-4o-mini", 100, 200)
-    # (100/1000 * 0.00015) + (200/1000 * 0.0006)
-    # 0.000015 + 0.00012 = 0.000135
-    assert cost == 0.000135
+    # (100/1000 * 0.00015) + (200/1000 * 0.0003)
+    # 0.000015 + 0.00006 = 0.000075
+    assert cost == 0.000075

@@ -14,7 +14,7 @@ async def test_llm_meter_singleton():
 async def test_llm_meter_wrap_unsupported():
     meter = LLMMeter()
     with pytest.raises(ValueError, match="not supported"):
-        meter.wrap_client({}, provider="anthropic")
+        meter.wrap_client({}, provider="unsupported-provider")
 
 
 @pytest.mark.asyncio
