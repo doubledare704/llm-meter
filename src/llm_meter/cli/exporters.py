@@ -1,7 +1,8 @@
 import csv
 import io
 import json
-from typing import Protocol, runtime_checkable
+from datetime import datetime
+from typing import Any, Protocol, runtime_checkable
 
 from llm_meter.cli.models import UsageExport
 
@@ -62,10 +63,16 @@ class ExcelExporter(DataExporter):
 
         # Write data
         for row in data:
-            # use model_dump(mode='json') to avoid issues with datetime objects if needed,
-            # though openpyxl handles datetimes.
             dict_row = row.model_dump()
-            ws.append([dict_row.get(key) for key in keys])
+            row_values: list[Any] = []
+            for key in keys:
+                val = dict_row.get(key)
+                if isinstance(val, datetime) and val.tzinfo is not None:
+                    # Excel doesn't support timezones, so we convert to naive.
+                    # We strip the timezone info.
+                    val = val.replace(tzinfo=None)
+                row_values.append(val)
+            ws.append(row_values)
 
         output = io.BytesIO()
         wb.save(output)
