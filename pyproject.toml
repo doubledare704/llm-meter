@@ -15,6 +15,18 @@ dependencies = [
     "openai>=2.14.0",
     "rich>=13.0.0",
 ]
+keywords = ["llm", "openai", "usage", "cost-tracking", "fastapi", "middleware", "instrumentation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: FastAPI",
+]
 
 [project.urls]
 Homepage = "https://github.com/doubledare704/llm-meter"
