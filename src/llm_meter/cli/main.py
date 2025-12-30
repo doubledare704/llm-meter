@@ -1,39 +1,19 @@
 import asyncio
-import csv
-import io
-import json
-from datetime import datetime
 from typing import Any
 
 import typer
-from pydantic import BaseModel
 from rich.console import Console
 from rich.table import Table
 
-from llm_meter.storage import StorageManager
-from llm_meter.storage.base import StorageEngine
+from llm_meter.cli.exporters import get_exporter
+from llm_meter.cli.models import UsageExport
+from llm_meter.storage import get_storage
 
 app = typer.Typer(help="LLM Usage & Cost Tracking CLI")
 usage_app = typer.Typer(help="Inspect LLM usage data")
 app.add_typer(usage_app, name="usage")
 
 console = Console()
-
-
-class UsageExport(BaseModel):
-    request_id: str
-    endpoint: str | None
-    user_id: str | None
-    model: str
-    provider: str
-    total_tokens: int
-    cost_estimate: float
-    latency_ms: int
-    timestamp: datetime
-
-
-def get_storage(url: str) -> StorageEngine:
-    return StorageManager(url)
 
 
 @usage_app.command("summary")
@@ -97,7 +77,7 @@ def by_endpoint(
 
 @app.command("export")
 def export(
-    format: str = typer.Option("json", "--format", "-f", help="Export format (json, csv)"),
+    format: str = typer.Option("json", "--format", "-f", help="Export format (json, csv, excel)"),
     output: str | None = typer.Option(None, "--output", "-o", help="Output file path"),
     storage_url: str = typer.Option("sqlite+aiosqlite:///llm_usage.db", "--storage-url", "-s", help="Database URL"),
 ) -> None:
@@ -117,31 +97,25 @@ def export(
         console.print("[yellow]No data to export.[/yellow]")
         return
 
-    if format == "json":
-        # Serialize list of models to JSON
-        json_content = json.dumps([row.model_dump(mode="json") for row in data], indent=2)
+    try:
+        exporter = get_exporter(format)
+        exported_bytes = exporter.export(data)
+
         if output:
-            with open(output, "w") as f:
-                f.write(json_content)
+            with open(output, "wb") as f:
+                f.write(exported_bytes)
             console.print(f"[green]Data exported to {output}[/green]")
         else:
-            console.print(json_content)
-    elif format == "csv":
-        keys = list(UsageExport.model_fields.keys())
-        if output:
-            with open(output, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=keys)
-                writer.writeheader()
-                # Use model_dump(mode='json') for CSV to handle datetime properly
-                writer.writerows([row.model_dump(mode="json") for row in data])
-            console.print(f"[green]Data exported to {output}[/green]")
-        else:
-            output_buffer = io.StringIO()
-            writer = csv.DictWriter(output_buffer, fieldnames=keys)
-            writer.writeheader()
-            for row in data:
-                writer.writerow(row.model_dump(mode="json"))
-            console.print(output_buffer.getvalue())
+            # For stdout, attempt to decode if it's text-based (json/csv)
+            if format.lower() in ("json", "csv"):
+                console.print(exported_bytes.decode("utf-8"))
+            else:
+                console.print("[red]Binary output (Excel) can only be written to a file using --output.[/red]")
+                raise typer.Exit(code=1)
+
+    except Exception as e:
+        console.print(f"[red]Error exporting data: {e}[/red]")
+        raise typer.Exit(code=1) from e
 
 
 if __name__ == "__main__":  # pragma: no cover

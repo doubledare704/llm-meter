@@ -149,3 +149,26 @@ def test_cli_export_csv_file(seeded_db, tmp_path):
     content = out_file.read_text()
     assert "gpt-4o" in content
     assert "gpt-4o-mini" in content
+
+
+def test_cli_export_excel_no_output(seeded_db):
+    """Verify Excel export fails without --output."""
+    result = runner.invoke(app, ["export", "-s", seeded_db, "--format", "excel"])
+    assert result.exit_code == 1
+    assert "Binary output (Excel) can only be written to a file" in result.stdout
+
+
+def test_cli_export_excel_file(seeded_db, tmp_path):
+    """Verify Excel export to a file."""
+    out_file = tmp_path / "out.xlsx"
+    result = runner.invoke(app, ["export", "-s", seeded_db, "--format", "excel", "-o", str(out_file)])
+    assert result.exit_code == 0
+    assert out_file.exists()
+    assert out_file.read_bytes().startswith(b"PK\x03\x04")
+
+
+def test_cli_export_unsupported_format(seeded_db):
+    """Verify error on unsupported format."""
+    result = runner.invoke(app, ["export", "-s", seeded_db, "--format", "unsupported"])
+    assert result.exit_code == 1
+    assert "Error exporting data: Unsupported format: unsupported" in result.stdout

@@ -66,3 +66,8 @@ class StorageManager(StorageEngine):
     async def close(self):
         """Dispose of the engine."""
         await self.engine.dispose()
+
+
+def get_storage(url: str) -> StorageEngine:
+    """Factory function to get a storage engine instance."""
+    return StorageManager(url)

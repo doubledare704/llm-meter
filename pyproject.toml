@@ -1,6 +1,6 @@
 [project]
 name = "llm-meter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Accurate LLM usage & cost tracking for Python backends (FastAPI-native)"
 readme = "README.md"
 authors = [{ name = "Oleksii Ovdiienko", email = "doubledare704@gmail.com" }]
@@ -35,6 +35,9 @@ Issues = "https://github.com/doubledare704/llm-meter/issues"
 [project.scripts]
 llm-meter = "llm_meter.cli.main:app"
 
+[project.optional-dependencies]
+excel = ["openpyxl>=3.1.5"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -51,6 +54,7 @@ dev = [
     "pyright>=1.1.390",
     "pytest-cov>=7.0.0",
     "pre-commit>=4.5.0",
+    "openpyxl>=3.1.5",
 ]
 
 [tool.ruff]
