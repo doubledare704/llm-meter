@@ -2,7 +2,7 @@
 
 [![PyPI Version](https://img.shields.io/pypi/v/llm-meter)](https://pypi.org/project/llm-meter/)
 [![Python Version](https://img.shields.io/pypi/pyversions/llm-meter)](https://www.python.org/)
-[![License](https://img.shields.io/github/license/yourusername/llm-meter)](LICENSE)
+[![License](https://img.shields.io/github/license/doubledare704/llm-meter)](LICENSE)
 
 **Accurate LLM usage & cost tracking for Python backends.**
 
