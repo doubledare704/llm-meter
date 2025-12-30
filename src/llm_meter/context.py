@@ -1,4 +1,6 @@
 import contextvars
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any
 from uuid import uuid4
 
@@ -68,3 +70,15 @@ def clear_context(token: contextvars.Token[AttributionContext | None] | None = N
         _current_context.reset(token)
     else:
         _current_context.set(None)
+
+
+@contextmanager
+def attribution_context(**kwargs: Any) -> Generator[AttributionContext, None, None]:
+    """
+    Context manager for setting attribution context for a block of code.
+    """
+    token = update_current_context(**kwargs)
+    try:
+        yield get_current_context()
+    finally:
+        clear_context(token)

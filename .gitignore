@@ -31,3 +31,6 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+# Local Roadmap
+ROADMAP.md

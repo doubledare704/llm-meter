@@ -1,12 +1,19 @@
 import functools
+import inspect
 import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
+try:
+    import tiktoken  # type: ignore
+except ImportError:
+    tiktoken = None  # type: ignore
+
 if TYPE_CHECKING:
+    from openai import AsyncStream
     from openai.types import CompletionUsage
-    from openai.types.chat import ChatCompletion
+    from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from llm_meter.context import AttributionContext, get_current_context
 from llm_meter.models import LLMUsage
@@ -33,6 +40,94 @@ F = TypeVar("F", bound=Callable[..., Any])
 AF = TypeVar("AF", bound=Callable[..., Awaitable[OpenAIResponse]])
 
 
+def count_tokens(text: str, model: str) -> int:
+    """Fallback token counter using tiktoken."""
+    if tiktoken is None:
+        logger.warning("tiktoken not installed. Install with 'pip install llm-meter[streaming]' for stream fallbacks.")
+        return 0
+
+    try:
+        try:
+            encoding = tiktoken.encoding_for_model(model)  # type: ignore
+        except (KeyError, ValueError):
+            encoding = tiktoken.get_encoding("cl100k_base")  # type: ignore
+        return len(encoding.encode(text))  # type: ignore
+    except Exception as e:
+        logger.debug(f"Error counting tokens with tiktoken: {e}")
+        return 0
+
+
+class InstrumentedAsyncStream:
+    """Wrapper for OpenAI AsyncStream to capture usage metadata."""
+
+    def __init__(
+        self,
+        stream: "AsyncStream[ChatCompletionChunk]",
+        callback: Callable[[LLMUsage], Awaitable[Any]],
+        model: str,
+        ctx: AttributionContext,
+        start_time: float,
+        messages: list[dict[str, Any]] | None = None,
+    ):
+        self._stream = stream
+        self._callback = callback
+        self._model = model
+        self._ctx = ctx
+        self._start_time = start_time
+        self._messages = messages or []
+        self._usage: CompletionUsage | OpenAIUsage | None = None
+        self._content: list[str] = []
+
+    async def __aiter__(self):
+        async for chunk in self._stream:
+            # Check for official usage in the chunk (usually the last one)
+            if hasattr(chunk, "usage") and chunk.usage is not None:
+                self._usage = chunk.usage
+
+            # Collect content for fallback counting
+            if hasattr(chunk, "choices") and chunk.choices:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, "content") and delta.content:
+                    self._content.append(delta.content)
+
+            yield chunk
+
+        # Stream finished, record usage
+        latency = int((time.perf_counter() - self._start_time) * 1000)
+
+        if self._usage:
+            input_tokens = getattr(self._usage, "prompt_tokens", 0)
+            output_tokens = getattr(self._usage, "completion_tokens", 0)
+            total_tokens = getattr(self._usage, "total_tokens", 0)
+        else:
+            # Fallback estimation
+            output_text = "".join(self._content)
+            output_tokens = count_tokens(output_text, self._model)
+            # For input tokens, we estimate from messages
+            input_text = " ".join([m.get("content", "") for m in self._messages if isinstance(m.get("content"), str)])
+            input_tokens = count_tokens(input_text, self._model)
+            total_tokens = input_tokens + output_tokens
+
+        cost = calculate_cost(self._model, input_tokens, output_tokens)
+
+        record = LLMUsage(
+            request_id=self._ctx.request_id,
+            endpoint=self._ctx.endpoint,
+            user_id=self._ctx.user_id,
+            feature=self._ctx.feature,
+            job_id=self._ctx.job_id,
+            provider="openai",
+            model=self._model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost_estimate=cost,
+            latency_ms=latency,
+            status="success",
+        )
+        await self._callback(record)
+
+
 def instrument_openai_call(provider: str, storage_callback: Callable[[LLMUsage], Awaitable[Any]]) -> Callable[[AF], AF]:
     """
     Decorator/Wrapper for OpenAI-like chat completion calls.
@@ -45,12 +140,23 @@ def instrument_openai_call(provider: str, storage_callback: Callable[[LLMUsage],
             return func
 
         @functools.wraps(func)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> "ChatCompletion | OpenAIResponse":
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.perf_counter()
             ctx = get_current_context()
 
             try:
                 response = await func(*args, **kwargs)
+
+                if kwargs.get("stream"):
+                    return InstrumentedAsyncStream(
+                        response,  # type: ignore
+                        storage_callback,
+                        str(kwargs.get("model", "unknown")),
+                        ctx,
+                        start_time,
+                        messages=kwargs.get("messages"),
+                    )
+
                 latency_ms = int((time.perf_counter() - start_time) * 1000)
 
                 # Extract usage from OpenAI Response object
@@ -130,22 +236,29 @@ class OpenAIClientInstrumenter:
         if hasattr(self.client, "chat") and hasattr(self.client.chat, "completions"):
             original_create = self.client.chat.completions.create
 
-            import inspect
-
             if inspect.iscoroutinefunction(original_create):
                 self.client.chat.completions.create = self._wrap_async(original_create)
             else:
                 self.client.chat.completions.create = self._wrap_sync(original_create)
 
-    def _wrap_async(
-        self, func: Callable[..., Awaitable["ChatCompletion | OpenAIResponse"]]
-    ) -> Callable[..., Awaitable["ChatCompletion | OpenAIResponse"]]:
+    def _wrap_async(self, func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
         @functools.wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> "ChatCompletion | OpenAIResponse":
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.perf_counter()
             ctx = get_current_context()
             try:
                 response = await func(*args, **kwargs)
+
+                if kwargs.get("stream"):
+                    return InstrumentedAsyncStream(
+                        response,
+                        self._callback,
+                        str(kwargs.get("model", "unknown")),
+                        ctx,
+                        start_time,
+                        messages=kwargs.get("messages"),
+                    )
+
                 await self._record_success(response, start_time, ctx)
                 return response
             except Exception as e:

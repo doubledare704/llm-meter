@@ -1,6 +1,6 @@
 [project]
 name = "llm-meter"
-version = "0.2.1"
+version = "0.3.0"
 description = "Accurate LLM usage & cost tracking for Python backends (FastAPI-native)"
 readme = "README.md"
 authors = [{ name = "Oleksii Ovdiienko", email = "doubledare704@gmail.com" }]
@@ -37,6 +37,7 @@ llm-meter = "llm_meter.cli.main:app"
 
 [project.optional-dependencies]
 excel = ["openpyxl>=3.1.5"]
+streaming = ["tiktoken>=0.12.0"]
 
 [build-system]
 requires = ["hatchling"]
