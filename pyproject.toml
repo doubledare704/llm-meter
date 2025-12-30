@@ -1,6 +1,6 @@
 [project]
 name = "llm-meter"
-version = "0.3.1"
+version = "0.3.2"
 description = "Accurate LLM usage & cost tracking for Python backends (FastAPI-native)"
 readme = "README.md"
 authors = [{ name = "Oleksii Ovdiienko", email = "doubledare704@gmail.com" }]

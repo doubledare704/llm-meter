@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import func, select
@@ -32,6 +33,15 @@ class StorageManager(StorageEngine):
                 session.add(usage)
             await session.commit()
 
+    async def record_batch(self, batch: Sequence[LLMUsage]):
+        """Persist a batch of LLMUsage records to the database in a single transaction."""
+        if not batch:
+            return
+        async with self.session_factory() as session:
+            async with session.begin():
+                session.add_all(batch)
+            await session.commit()
+
     async def get_usage_summary(self) -> list[dict[str, Any]]:
         """Retrieve a high-level summary of usage."""
         async with self.session_factory() as session:
@@ -62,6 +72,10 @@ class StorageManager(StorageEngine):
         async with self.session_factory() as session:
             result = await session.execute(select(LLMUsage))
             return list(result.scalars().all())
+
+    async def flush(self) -> None:
+        """No-op flush for StorageManager (no batching)."""
+        return None
 
     async def close(self):
         """Dispose of the engine."""
