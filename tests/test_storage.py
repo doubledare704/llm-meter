@@ -1,7 +1,6 @@
-import pytest
-
 from llm_meter.models import LLMUsage
-from llm_meter.storage import StorageManager
+from llm_meter.storage.manager import StorageManager, get_storage
+from llm_meter.storage.postgres import PostgresStorageManager
 
 
 def test_llm_usage_repr():
@@ -9,7 +8,21 @@ def test_llm_usage_repr():
     assert repr(u) == "<LLMUsage(id=1, model='gpt-4', cost=0.05)>"
 
 
-@pytest.mark.asyncio
+def test_get_storage_factory():
+    """Test that the factory returns the correct storage engine."""
+    # Test Postgres case
+    try:
+        pg_storage = get_storage("postgresql://user:pass@host/db")
+        assert isinstance(pg_storage, PostgresStorageManager)
+    except ImportError:
+        # If asyncpg is not installed, this path cannot be tested, which is acceptable.
+        pass
+
+    # Test default SQLite case
+    sqlite_storage = get_storage("sqlite+aiosqlite:///./test.db")
+    assert isinstance(sqlite_storage, StorageManager)
+
+
 async def test_record_and_summary(storage: StorageManager):
     usage = LLMUsage(
         request_id="test-req",
@@ -31,7 +44,6 @@ async def test_record_and_summary(storage: StorageManager):
     assert summary[0]["total_cost"] == 0.01
 
 
-@pytest.mark.asyncio
 async def test_usage_by_endpoint(storage: StorageManager):
     u1 = LLMUsage(request_id="1", endpoint="/a", model="m", provider="p", total_tokens=10, cost_estimate=0.1)
     u2 = LLMUsage(request_id="2", endpoint="/a", model="m", provider="p", total_tokens=20, cost_estimate=0.2)

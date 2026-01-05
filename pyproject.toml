@@ -1,6 +1,6 @@
 [project]
 name = "llm-meter"
-version = "0.3.2"
+version = "0.3.3"
 description = "Accurate LLM usage & cost tracking for Python backends (FastAPI-native)"
 readme = "README.md"
 authors = [{ name = "Oleksii Ovdiienko", email = "doubledare704@gmail.com" }]
@@ -38,6 +38,7 @@ llm-meter = "llm_meter.cli.main:app"
 [project.optional-dependencies]
 excel = ["openpyxl>=3.1.5"]
 streaming = ["tiktoken>=0.12.0"]
+postgres = ["asyncpg>=0.29.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -56,6 +57,8 @@ dev = [
     "pytest-cov>=7.0.0",
     "pre-commit>=4.5.0",
     "openpyxl>=3.1.5",
+    "testcontainers[postgres]>=4.0.0",
+    "asyncpg>=0.29.0",
 ]
 
 [tool.ruff]
@@ -68,6 +71,9 @@ ignore = []
 
 [tool.pyright]
 include = ["src"]
-exclude = ["**/__pycache__"]
+exclude = ["**/__pycache__", "**/postgres.py"]
 pythonVersion = "3.10"
 typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

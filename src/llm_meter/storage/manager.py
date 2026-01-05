@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from llm_meter.models import Base, LLMUsage
 from llm_meter.storage.base import StorageEngine
+from llm_meter.storage.postgres import PostgresStorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 class StorageManager(StorageEngine):
     """
     Handles asynchronous database operations for recording and retrieving LLM usage.
+    Default implementation for SQLite.
     """
 
     def __init__(self, storage_url: str):
@@ -83,5 +85,8 @@ class StorageManager(StorageEngine):
 
 
 def get_storage(url: str) -> StorageEngine:
-    """Factory function to get a storage engine instance."""
-    return StorageManager(url)
+    """Factory function to get a storage engine instance based on URL scheme."""
+    if url.startswith("postgres://") or url.startswith("postgresql://"):
+        return PostgresStorageManager(dsn=url)
+    # Default to SQLite
+    return StorageManager(storage_url=url)

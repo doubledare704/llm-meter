@@ -21,6 +21,7 @@ pip install llm-meter
 ```
 
 ### 1. Initialize & Instrument
+
 ```python
 from fastapi import FastAPI
 from llm_meter import LLMMeter, FastAPIMiddleware
@@ -51,6 +52,7 @@ async def generate(prompt: str):
 ```
 
 ### 2. Inspect via CLI
+
 ```bash
 # Get a high-level summary
 llm-meter usage summary
@@ -78,6 +80,35 @@ llm-meter usage by-endpoint
 - No web UI (everything is available via CLI or SQL).
 
 ---
+
+## 🧪 Testing, Linting & Type Checks
+
+To run all tests and check coverage:
+
+```bash
+uv run pytest --cov=llm_meter --cov-report=term-missing
+```
+
+To run linting and formatting checks with Ruff:
+
+```bash
+uv run ruff check . --fix
+uv run ruff format .
+```
+
+To run type checking with Pyright:
+
+```bash
+uv run pyright
+```
+
+To run all pre-commit hooks manually:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+These commands help ensure code quality, style, and type safety before committing changes.
 
 ## 🛠 Contributing
 
