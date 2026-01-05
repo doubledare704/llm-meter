@@ -172,3 +172,133 @@ def test_cli_export_unsupported_format(seeded_db):
     result = runner.invoke(app, ["export", "-s", seeded_db, "--format", "unsupported"])
     assert result.exit_code == 1
     assert "Error exporting data: Unsupported format: unsupported" in result.stdout
+
+
+# --- Budget Commands Tests ---
+
+
+def test_cli_budget_set_basic(temp_db):
+    """Verify budget set command with basic options."""
+    result = runner.invoke(app, ["budget", "set", "testuser", "100.0", "-s", temp_db])
+    assert result.exit_code == 0
+    assert "Budget set for user 'testuser'" in result.stdout
+    assert "Monthly limit: $100.00" in result.stdout
+    assert "Blocking: disabled" in result.stdout
+
+
+def test_cli_budget_set_with_daily_limit(temp_db):
+    """Verify budget set command with daily limit."""
+    result = runner.invoke(app, ["budget", "set", "testuser", "100.0", "--daily-limit", "10.0", "-s", temp_db])
+    assert result.exit_code == 0
+    assert "Daily limit: $10.00" in result.stdout
+
+
+def test_cli_budget_set_with_blocking(temp_db):
+    """Verify budget set command with blocking enabled."""
+    result = runner.invoke(app, ["budget", "set", "testuser", "100.0", "--blocking", "-s", temp_db])
+    assert result.exit_code == 0
+    assert "Blocking: enabled" in result.stdout
+
+
+def test_cli_budget_set_with_warning(temp_db):
+    """Verify budget set command with custom warning threshold."""
+    result = runner.invoke(app, ["budget", "set", "testuser", "100.0", "--warning", "0.5", "-s", temp_db])
+    assert result.exit_code == 0
+    assert "Warning threshold: 50%" in result.stdout
+
+
+def test_cli_budget_status_not_configured(temp_db):
+    """Verify budget status when no budget is configured."""
+    result = runner.invoke(app, ["budget", "status", "nonexistent", "-s", temp_db])
+    assert result.exit_code == 0
+    assert "No budget configured for user 'nonexistent'" in result.stdout
+
+
+def test_cli_budget_status_configured(temp_db, seeded_db):
+    """Verify budget status with configured budget."""
+    # First set a budget
+    runner.invoke(app, ["budget", "set", "testuser", "100.0", "-s", seeded_db])
+
+    result = runner.invoke(app, ["budget", "status", "testuser", "-s", seeded_db])
+    assert result.exit_code == 0
+    assert "Budget Status for User: testuser" in result.stdout
+    assert "Limit: $100.00" in result.stdout
+    assert "Blocking: disabled" in result.stdout
+
+
+def test_cli_budget_list_empty(temp_db):
+    """Verify budget list when no budgets configured."""
+    result = runner.invoke(app, ["budget", "list", "-s", temp_db])
+    assert result.exit_code == 0
+    assert "No budgets configured" in result.stdout
+
+
+def test_cli_budget_list_with_budgets(temp_db, seeded_db):
+    """Verify budget list with configured budgets."""
+    # First set a budget
+    runner.invoke(app, ["budget", "set", "user1", "100.0", "--daily-limit", "10.0", "-s", seeded_db])
+    runner.invoke(app, ["budget", "set", "user2", "200.0", "--blocking", "-s", seeded_db])
+
+    result = runner.invoke(app, ["budget", "list", "-s", seeded_db])
+    assert result.exit_code == 0
+    assert "user1" in result.stdout
+    assert "user2" in result.stdout
+    assert "$100.00" in result.stdout
+    assert "$10.00" in result.stdout
+    assert "Yes" in result.stdout  # blocking enabled
+    assert "No" in result.stdout  # blocking disabled
+
+
+def test_cli_budget_delete(temp_db, seeded_db):
+    """Verify budget delete command."""
+    # First set a budget
+    runner.invoke(app, ["budget", "set", "testuser", "100.0", "-s", seeded_db])
+
+    result = runner.invoke(app, ["budget", "delete", "testuser", "-s", seeded_db])
+    assert result.exit_code == 0
+    assert "Budget deleted for user 'testuser'" in result.stdout
+
+    # Verify it's deleted
+    result = runner.invoke(app, ["budget", "status", "testuser", "-s", seeded_db])
+    assert "No budget configured" in result.stdout
+
+
+def test_cli_budget_delete_nonexistent(temp_db):
+    """Verify budget delete for nonexistent user doesn't error."""
+    result = runner.invoke(app, ["budget", "delete", "nonexistent", "-s", temp_db])
+    assert result.exit_code == 0
+    assert "Budget deleted for user 'nonexistent'" in result.stdout
+
+
+@pytest.fixture
+def budget_db_no_limit(tmp_path):
+    """Fixture for a database with a budget that has no limits configured."""
+    db_path = tmp_path / "test_no_limit.db"
+    url = f"sqlite+aiosqlite:///{db_path}"
+
+    async def init():
+        from llm_meter.models import Budget
+
+        sm = StorageManager(url)
+        await sm.initialize()
+        # Create a budget with no limits (both monthly_limit and daily_limit are None)
+        budget = Budget(
+            user_id="nolimit_user",
+            monthly_limit=None,  # No limit set
+            daily_limit=None,  # No limit set
+            blocking_enabled=False,
+            warning_threshold=0.8,
+        )
+        await sm.upsert_budget(budget)
+        await sm.close()
+
+    asyncio.run(init())
+    return url
+
+
+def test_cli_budget_status_unlimited(budget_db_no_limit):
+    """Verify budget status shows 'Limit: Unlimited' when no limits are configured."""
+    result = runner.invoke(app, ["budget", "status", "nolimit_user", "-s", budget_db_no_limit])
+    assert result.exit_code == 0
+    assert "Budget Status for User: nolimit_user" in result.stdout
+    assert "Limit: Unlimited" in result.stdout

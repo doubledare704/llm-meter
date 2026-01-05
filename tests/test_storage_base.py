@@ -1,5 +1,3 @@
-import pytest
-
 from llm_meter.models import LLMUsage
 from llm_meter.storage.base import StorageEngine
 
@@ -30,7 +28,6 @@ class DummyStorage(StorageEngine):
         pass
 
 
-@pytest.mark.asyncio
 async def test_record_batch_calls_record_usage():
     dummy = DummyStorage()
     batch = [

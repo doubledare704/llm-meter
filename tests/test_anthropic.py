@@ -25,7 +25,6 @@ class MockEvent:
         self.usage = usage
 
 
-@pytest.mark.asyncio
 async def test_anthropic_async_success():
     storage_callback = AsyncMock()
     client = MagicMock()
@@ -50,7 +49,6 @@ async def test_anthropic_async_success():
     assert record.user_id == "anthropic_user"
 
 
-@pytest.mark.asyncio
 async def test_anthropic_streaming_success():
     storage_callback = AsyncMock()
     client = MagicMock()
@@ -87,7 +85,6 @@ async def test_anthropic_streaming_success():
     assert record.status == "success"
 
 
-@pytest.mark.asyncio
 async def test_anthropic_error():
     storage_callback = AsyncMock()
     client = MagicMock()

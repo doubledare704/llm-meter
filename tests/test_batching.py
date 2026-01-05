@@ -1,10 +1,11 @@
 import asyncio
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from llm_meter import LLMMeter
-from llm_meter.models import LLMUsage
+from llm_meter.models import Budget, LLMUsage
 from llm_meter.storage.batcher import BatchingStorageManager
 
 
@@ -21,7 +22,6 @@ def mock_storage():
     return storage
 
 
-@pytest.mark.asyncio
 async def test_batching_storage_worker(mock_storage):
     # Reset singleton for test
     LLMMeter._instance = None
@@ -46,7 +46,6 @@ async def test_batching_storage_worker(mock_storage):
     await batcher.close()
 
 
-@pytest.mark.asyncio
 async def test_batching_storage_full_batch(mock_storage):
     LLMMeter._instance = None
     batcher = BatchingStorageManager(mock_storage, batch_size=2, flush_interval=1.0)
@@ -65,7 +64,6 @@ async def test_batching_storage_full_batch(mock_storage):
     await batcher.close()
 
 
-@pytest.mark.asyncio
 async def test_batching_storage_flush(mock_storage):
     LLMMeter._instance = None
     batcher = BatchingStorageManager(mock_storage, batch_size=10, flush_interval=10.0)
@@ -80,7 +78,6 @@ async def test_batching_storage_flush(mock_storage):
     assert len(mock_storage.record_batch.call_args[0][0]) == 1
 
 
-@pytest.mark.asyncio
 async def test_batching_proxy_methods(mock_storage):
     batcher = BatchingStorageManager(mock_storage)
 
@@ -94,7 +91,6 @@ async def test_batching_proxy_methods(mock_storage):
     assert res3 == []
 
 
-@pytest.mark.asyncio
 async def test_batching_no_record_batch_fallback(mock_storage):
     # Remove record_batch to test fallback
     del mock_storage.record_batch
@@ -108,7 +104,6 @@ async def test_batching_no_record_batch_fallback(mock_storage):
     assert mock_storage.record_usage.call_count == 2
 
 
-@pytest.mark.asyncio
 async def test_batching_flush_error_handling(mock_storage, caplog):
     mock_storage.record_batch.side_effect = Exception("DB Down")
     batcher = BatchingStorageManager(mock_storage)
@@ -119,7 +114,6 @@ async def test_batching_flush_error_handling(mock_storage, caplog):
     assert "Failed to flush batch" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_batching_worker_error_handling(mock_storage, caplog):
     # Force an error in the worker loop by making queue.get fail once
     batcher = BatchingStorageManager(mock_storage)
@@ -148,7 +142,6 @@ async def test_batching_worker_error_handling(mock_storage, caplog):
     await batcher.close()
 
 
-@pytest.mark.asyncio
 async def test_llm_meter_batching_integration(mock_storage):
     LLMMeter._instance = None
     meter = LLMMeter(storage_engine=mock_storage, enable_batching=True, batch_size=2)
@@ -172,3 +165,85 @@ async def test_llm_meter_batching_integration(mock_storage):
     assert mock_storage.record_batch.called
 
     await meter.shutdown()
+
+
+# --- Budget Proxy Method Tests ---
+
+
+@pytest.fixture
+def mock_storage_with_budget():
+    """Mock storage with budget-related methods."""
+    storage = AsyncMock()
+    storage.initialize = AsyncMock()
+    storage.record_usage = AsyncMock()
+    storage.record_batch = AsyncMock()
+    storage.get_usage_summary = AsyncMock(return_value=[])
+    storage.get_usage_by_endpoint = AsyncMock(return_value=[])
+    storage.get_all_usage = AsyncMock(return_value=[])
+    storage.close = AsyncMock()
+    storage.get_budget = AsyncMock(return_value=None)
+    storage.upsert_budget = AsyncMock()
+    storage.delete_budget = AsyncMock()
+    storage.get_all_budgets = AsyncMock(return_value=[])
+    storage.get_user_usage_in_period = AsyncMock(return_value=0.0)
+    return storage
+
+
+async def test_batching_get_budget(mock_storage_with_budget):
+    """Test that get_budget is properly proxied to base engine."""
+    from llm_meter.models import Budget
+
+    mock_storage_with_budget.get_budget.return_value = Budget(user_id="testuser", monthly_limit=100.0)
+
+    batcher = BatchingStorageManager(mock_storage_with_budget)
+    result = await batcher.get_budget("testuser")
+
+    assert result is not None
+    assert result.user_id == "testuser"
+    mock_storage_with_budget.get_budget.assert_called_once_with("testuser")
+
+
+async def test_batching_upsert_budget(mock_storage_with_budget):
+    """Test that upsert_budget is properly proxied to base engine."""
+
+    batcher = BatchingStorageManager(mock_storage_with_budget)
+    budget = Budget(user_id="testuser", monthly_limit=100.0)
+    await batcher.upsert_budget(budget)
+
+    mock_storage_with_budget.upsert_budget.assert_called_once_with(budget)
+
+
+async def test_batching_delete_budget(mock_storage_with_budget):
+    """Test that delete_budget is properly proxied to base engine."""
+    batcher = BatchingStorageManager(mock_storage_with_budget)
+    await batcher.delete_budget("testuser")
+
+    mock_storage_with_budget.delete_budget.assert_called_once_with("testuser")
+
+
+async def test_batching_get_all_budgets(mock_storage_with_budget):
+    """Test that get_all_budgets is properly proxied to base engine."""
+
+    batcher = BatchingStorageManager(mock_storage_with_budget)
+    mock_storage_with_budget.get_all_budgets.return_value = [
+        Budget(user_id="user1", monthly_limit=100.0),
+        Budget(user_id="user2", monthly_limit=200.0),
+    ]
+
+    result = await batcher.get_all_budgets()
+
+    assert len(result) == 2
+    mock_storage_with_budget.get_all_budgets.assert_called_once()
+
+
+async def test_batching_get_user_usage_in_period(mock_storage_with_budget):
+    """Test that get_user_usage_in_period is properly proxied to base engine."""
+
+    batcher = BatchingStorageManager(mock_storage_with_budget)
+    mock_storage_with_budget.get_user_usage_in_period.return_value = 50.0
+
+    now = datetime.now(timezone.utc)
+    result = await batcher.get_user_usage_in_period("testuser", now, now)
+
+    assert result == 50.0
+    mock_storage_with_budget.get_user_usage_in_period.assert_called_once_with("testuser", now, now)

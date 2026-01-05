@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -44,3 +44,30 @@ class LLMUsage(Base):
 
     def __repr__(self) -> str:
         return f"<LLMUsage(id={self.id}, model='{self.model}', cost={self.cost_estimate})>"
+
+
+class Budget(Base):
+    """
+    Stores budget limits and current consumption for users.
+    """
+
+    __tablename__ = "budgets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+
+    # Budget limits
+    monthly_limit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    daily_limit: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Configuration
+    blocking_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    warning_threshold: Mapped[float] = mapped_column(Float, default=0.8)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    def __repr__(self) -> str:
+        return f"<Budget(user_id='{self.user_id}', monthly_limit={self.monthly_limit}, daily_limit={self.daily_limit})>"

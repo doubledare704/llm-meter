@@ -6,7 +6,6 @@ from llm_meter.models import LLMUsage
 from llm_meter.providers.openai import OpenAIWrapper, instrument_openai_call
 
 
-@pytest.mark.asyncio
 async def test_openai_wrapper_async_success():
     # Mock OpenAI client structure
     mock_client = MagicMock()
@@ -42,7 +41,6 @@ async def test_openai_wrapper_async_success():
     assert callback_called is True
 
 
-@pytest.mark.asyncio
 async def test_openai_wrapper_async_error():
     mock_client = MagicMock()
     mock_create = AsyncMock()
@@ -81,7 +79,6 @@ def test_openai_wrapper_sync():
 # --- Functional tests (previously test_openai_functional.py) ---
 
 
-@pytest.mark.asyncio
 async def test_instrument_openai_call_success():
     mock_usage = MagicMock()
     mock_usage.prompt_tokens = 20
@@ -111,7 +108,6 @@ async def test_instrument_openai_call_success():
     assert callback_records[0].status == "success"
 
 
-@pytest.mark.asyncio
 async def test_instrument_openai_call_error():
     async def mock_func_error(*args, **kwargs):
         raise ValueError("Oops")
@@ -131,7 +127,6 @@ async def test_instrument_openai_call_error():
     assert callback_records[0].error_message == "Oops"
 
 
-@pytest.mark.asyncio
 async def test_instrument_openai_call_already_instrumented():
     async def mock_func(*args, **kwargs):
         return MagicMock()

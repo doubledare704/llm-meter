@@ -1,7 +1,8 @@
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
-from llm_meter.models import LLMUsage
+from llm_meter.models import Budget, LLMUsage
 
 
 @runtime_checkable
@@ -45,3 +46,30 @@ class StorageEngine(Protocol):
         """
         for usage in batch:
             await self.record_usage(usage)
+
+    # Budget-related methods
+
+    async def get_user_usage_in_period(
+        self,
+        user_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> float:
+        """Get total cost for a user in a time period."""
+        ...
+
+    async def get_budget(self, user_id: str) -> Budget | None:
+        """Get budget configuration for a user."""
+        ...
+
+    async def upsert_budget(self, budget: Budget) -> None:
+        """Create or update a budget."""
+        ...
+
+    async def delete_budget(self, user_id: str) -> None:
+        """Delete a user's budget."""
+        ...
+
+    async def get_all_budgets(self) -> list[Budget]:
+        """Get all budget configurations."""
+        ...

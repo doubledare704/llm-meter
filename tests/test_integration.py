@@ -1,11 +1,9 @@
-import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from llm_meter import FastAPIMiddleware, LLMMeter, get_current_context
 
 
-@pytest.mark.asyncio
 async def test_middleware_context_propagation():
     # Initialize meter with in-memory storage
     meter = LLMMeter(storage_url="sqlite+aiosqlite:///:memory:")
@@ -34,7 +32,6 @@ async def test_middleware_context_propagation():
     await meter.shutdown()
 
 
-@pytest.mark.asyncio
 async def test_middleware_route_path_capture():
     # Initialize meter
     meter = LLMMeter(storage_url="sqlite+aiosqlite:///:memory:")

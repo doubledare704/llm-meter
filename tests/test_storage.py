@@ -62,3 +62,136 @@ async def test_usage_by_endpoint(storage: StorageManager):
     assert endpoints[0]["total_tokens"] == 30
     assert endpoints[1]["endpoint"] == "/b"
     assert endpoints[1]["total_tokens"] == 5
+
+
+# --- Budget Tests for StorageManager ---
+
+
+async def test_upsert_budget_new(storage: StorageManager):
+    """Test creating a new budget."""
+    from llm_meter.models import Budget
+
+    budget = Budget(
+        user_id="new_user",
+        monthly_limit=100.0,
+        daily_limit=10.0,
+        blocking_enabled=True,
+        warning_threshold=0.8,
+    )
+    await storage.upsert_budget(budget)
+
+    # Verify it was created
+    retrieved = await storage.get_budget("new_user")
+    assert retrieved is not None
+    assert retrieved.monthly_limit == 100.0
+    assert retrieved.daily_limit == 10.0
+    assert retrieved.blocking_enabled is True
+
+
+async def test_upsert_budget_update_existing(storage: StorageManager):
+    """Test updating an existing budget (covers lines 124-127)."""
+    from llm_meter.models import Budget
+
+    # First create a budget
+    original = Budget(
+        user_id="existing_user",
+        monthly_limit=50.0,
+        daily_limit=5.0,
+        blocking_enabled=False,
+        warning_threshold=0.9,
+    )
+    await storage.upsert_budget(original)
+
+    # Now update it
+    updated = Budget(
+        user_id="existing_user",
+        monthly_limit=200.0,
+        daily_limit=20.0,
+        blocking_enabled=True,
+        warning_threshold=0.7,
+    )
+    await storage.upsert_budget(updated)
+
+    # Verify it was updated
+    retrieved = await storage.get_budget("existing_user")
+    assert retrieved is not None
+    assert retrieved.monthly_limit == 200.0
+    assert retrieved.daily_limit == 20.0
+    assert retrieved.blocking_enabled is True
+    assert retrieved.warning_threshold == 0.7
+
+
+async def test_delete_budget(storage: StorageManager):
+    """Test deleting a budget."""
+    from llm_meter.models import Budget
+
+    # First create a budget
+    budget = Budget(user_id="to_delete", monthly_limit=100.0)
+    await storage.upsert_budget(budget)
+
+    # Verify it exists
+    assert await storage.get_budget("to_delete") is not None
+
+    # Delete it
+    await storage.delete_budget("to_delete")
+
+    # Verify it's gone
+    assert await storage.get_budget("to_delete") is None
+
+
+async def test_get_all_budgets(storage: StorageManager):
+    """Test getting all budgets."""
+    from llm_meter.models import Budget
+
+    # Create multiple budgets
+    await storage.upsert_budget(Budget(user_id="user1", monthly_limit=100.0))
+    await storage.upsert_budget(Budget(user_id="user2", monthly_limit=200.0))
+    await storage.upsert_budget(Budget(user_id="user3", monthly_limit=300.0))
+
+    budgets = await storage.get_all_budgets()
+
+    assert len(budgets) == 3
+    user_ids = [b.user_id for b in budgets]
+    assert "user1" in user_ids
+    assert "user2" in user_ids
+    assert "user3" in user_ids
+
+
+async def test_get_user_usage_in_period(storage: StorageManager):
+    """Test getting user usage in a time period."""
+    from datetime import datetime, timedelta, timezone
+
+    from llm_meter.models import Budget
+
+    # Create a budget for the user
+    await storage.upsert_budget(Budget(user_id="period_user", monthly_limit=100.0))
+
+    # Record some usage
+    now = datetime.now(timezone.utc)
+    usage1 = LLMUsage(
+        request_id="u1",
+        user_id="period_user",
+        model="gpt-4",
+        provider="openai",
+        total_tokens=100,
+        cost_estimate=0.5,
+        timestamp=now,
+    )
+    usage2 = LLMUsage(
+        request_id="u2",
+        user_id="period_user",
+        model="gpt-4",
+        provider="openai",
+        total_tokens=200,
+        cost_estimate=1.0,
+        timestamp=now - timedelta(hours=1),
+    )
+    await storage.record_usage(usage1)
+    await storage.record_usage(usage2)
+
+    # Get usage for the period
+    start = now - timedelta(hours=2)
+    end = now + timedelta(hours=1)
+    total = await storage.get_user_usage_in_period("period_user", start, end)
+
+    assert total == 1.5  # 0.5 + 1.0

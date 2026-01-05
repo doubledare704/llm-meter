@@ -1,9 +1,10 @@
 import asyncio
 import contextlib
 import logging
+from datetime import datetime
 from typing import Any
 
-from llm_meter.models import LLMUsage
+from llm_meter.models import Budget, LLMUsage
 from llm_meter.storage.base import StorageEngine
 
 logger = logging.getLogger(__name__)
@@ -108,3 +109,25 @@ class BatchingStorageManager(StorageEngine):
 
     async def get_all_usage(self) -> list[LLMUsage]:
         return await self.base_engine.get_all_usage()
+
+    # Budget-related method proxies
+
+    async def get_user_usage_in_period(
+        self,
+        user_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> float:
+        return await self.base_engine.get_user_usage_in_period(user_id, start_date, end_date)
+
+    async def get_budget(self, user_id: str) -> Budget | None:
+        return await self.base_engine.get_budget(user_id)
+
+    async def upsert_budget(self, budget: Budget) -> None:
+        return await self.base_engine.upsert_budget(budget)
+
+    async def delete_budget(self, user_id: str) -> None:
+        return await self.base_engine.delete_budget(user_id)
+
+    async def get_all_budgets(self) -> list[Budget]:
+        return await self.base_engine.get_all_budgets()

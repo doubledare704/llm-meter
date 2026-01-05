@@ -1,11 +1,12 @@
 import logging
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from llm_meter.models import Base, LLMUsage
+from llm_meter.models import Base, Budget, LLMUsage
 from llm_meter.storage.base import StorageEngine
 from llm_meter.storage.postgres import PostgresStorageManager
 
@@ -82,6 +83,68 @@ class StorageManager(StorageEngine):
     async def close(self):
         """Dispose of the engine."""
         await self.engine.dispose()
+
+    # Budget-related methods
+
+    async def get_user_usage_in_period(
+        self,
+        user_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> float:
+        """Get total cost for a user in a time period."""
+        async with self.session_factory() as session:
+            stmt = (
+                select(func.sum(LLMUsage.cost_estimate))
+                .where(LLMUsage.user_id == user_id)
+                .where(LLMUsage.timestamp >= start_date)
+                .where(LLMUsage.timestamp <= end_date)
+            )
+            result = await session.execute(stmt)
+            return float(result.scalar() or 0.0)
+
+    async def get_budget(self, user_id: str) -> Budget | None:
+        """Get budget configuration for a user."""
+        async with self.session_factory() as session:
+            stmt = select(Budget).where(Budget.user_id == user_id)
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def upsert_budget(self, budget: Budget) -> None:
+        """Create or update a budget."""
+        async with self.session_factory() as session:
+            async with session.begin():
+                # Check if budget exists
+                existing = await session.execute(select(Budget).where(Budget.user_id == budget.user_id))
+                existing_budget = existing.scalar_one_or_none()
+                if existing_budget:
+                    # Update existing
+                    existing_budget.monthly_limit = budget.monthly_limit
+                    existing_budget.daily_limit = budget.daily_limit
+                    existing_budget.blocking_enabled = budget.blocking_enabled
+                    existing_budget.warning_threshold = budget.warning_threshold
+                else:
+                    # Insert new
+                    session.add(budget)
+            await session.commit()
+
+    async def delete_budget(self, user_id: str) -> None:
+        """Delete a user's budget."""
+        async with self.session_factory() as session:
+            async with session.begin():
+                stmt = select(Budget).where(Budget.user_id == user_id)
+                result = await session.execute(stmt)
+                budget = result.scalar_one_or_none()
+                if budget:
+                    await session.delete(budget)
+            await session.commit()
+
+    async def get_all_budgets(self) -> list[Budget]:
+        """Get all budget configurations."""
+        async with self.session_factory() as session:
+            stmt = select(Budget).order_by(Budget.user_id)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
 
 
 def get_storage(url: str) -> StorageEngine:

@@ -182,8 +182,11 @@ async def test_initialize_with_injected_pool():
     mock_pool.acquire = MagicMock(side_effect=mock_acquire)
     storage = PostgresStorageManager(pool=mock_pool)
     await storage.initialize()
-    mock_conn.execute.assert_called_once()
-    assert "CREATE TABLE IF NOT EXISTS llm_usage" in mock_conn.execute.call_args[0][0]
+    # Should create both llm_usage and budgets tables
+    assert mock_conn.execute.call_count == 2
+    calls = mock_conn.execute.call_args_list
+    assert "CREATE TABLE IF NOT EXISTS llm_usage" in calls[0][0][0]
+    assert "CREATE TABLE IF NOT EXISTS budgets" in calls[1][0][0]
 
 
 async def test_postgres_get_methods_uninitialized():
@@ -192,3 +195,135 @@ async def test_postgres_get_methods_uninitialized():
     assert await storage.get_all_usage() == []
     assert await storage.get_usage_summary() == []
     assert await storage.get_usage_by_endpoint() == []
+
+
+# --- Budget Method Tests ---
+
+
+async def test_postgres_budget_crud(pg_storage: PostgresStorageManager):
+    """Test CRUD operations for budgets."""
+
+    from llm_meter.models import Budget
+
+    # Create a budget
+    budget = Budget(
+        user_id="test_user",
+        monthly_limit=100.0,
+        daily_limit=10.0,
+        blocking_enabled=True,
+        warning_threshold=0.8,
+    )
+    await pg_storage.upsert_budget(budget)
+
+    # Read it back
+    retrieved = await pg_storage.get_budget("test_user")
+    assert retrieved is not None
+    assert retrieved.monthly_limit == 100.0
+    assert retrieved.daily_limit == 10.0
+    assert retrieved.blocking_enabled is True
+    assert retrieved.warning_threshold == 0.8
+
+
+async def test_postgres_budget_update(pg_storage: PostgresStorageManager):
+    """Test updating an existing budget."""
+    from llm_meter.models import Budget
+
+    # Create initial budget
+    await pg_storage.upsert_budget(Budget(user_id="update_user", monthly_limit=50.0))
+
+    # Update it
+    updated = Budget(
+        user_id="update_user",
+        monthly_limit=200.0,
+        daily_limit=20.0,
+        blocking_enabled=True,
+        warning_threshold=0.5,
+    )
+    await pg_storage.upsert_budget(updated)
+
+    # Verify update
+    retrieved = await pg_storage.get_budget("update_user")
+    assert retrieved is not None
+    assert retrieved.monthly_limit == 200.0
+    assert retrieved.daily_limit == 20.0
+    assert retrieved.warning_threshold == 0.5
+
+
+async def test_postgres_get_user_usage_in_period(pg_storage: PostgresStorageManager):
+    """Test getting user usage in a time period."""
+    from datetime import datetime, timedelta, timezone
+
+    # Record usage
+    now = datetime.now(timezone.utc)
+    usage1 = LLMUsage(
+        request_id="p1",
+        user_id="period_user",
+        model="gpt-4",
+        provider="openai",
+        total_tokens=100,
+        cost_estimate=0.5,
+        timestamp=now,
+    )
+    usage2 = LLMUsage(
+        request_id="p2",
+        user_id="period_user",
+        model="gpt-4",
+        provider="openai",
+        total_tokens=200,
+        cost_estimate=1.0,
+        timestamp=now - timedelta(hours=1),
+    )
+    await pg_storage.record_batch([usage1, usage2])
+
+    # Get usage for period
+    start = now - timedelta(hours=2)
+    end = now + timedelta(hours=1)
+    total = await pg_storage.get_user_usage_in_period("period_user", start, end)
+
+    assert total == 1.5
+
+
+async def test_postgres_delete_budget(pg_storage: PostgresStorageManager):
+    """Test deleting a budget."""
+    from llm_meter.models import Budget
+
+    # Create a budget
+    await pg_storage.upsert_budget(Budget(user_id="delete_user", monthly_limit=100.0))
+
+    # Verify exists
+    assert await pg_storage.get_budget("delete_user") is not None
+
+    # Delete it
+    await pg_storage.delete_budget("delete_user")
+
+    # Verify deleted
+    assert await pg_storage.get_budget("delete_user") is None
+
+
+async def test_postgres_get_all_budgets(pg_storage: PostgresStorageManager):
+    """Test getting all budgets."""
+    from llm_meter.models import Budget
+
+    # Create multiple budgets
+    await pg_storage.upsert_budget(Budget(user_id="pg_user1", monthly_limit=100.0))
+    await pg_storage.upsert_budget(Budget(user_id="pg_user2", monthly_limit=200.0))
+    await pg_storage.upsert_budget(Budget(user_id="pg_user3", monthly_limit=300.0))
+
+    budgets = await pg_storage.get_all_budgets()
+
+    assert len(budgets) == 3
+    user_ids = [b.user_id for b in budgets]
+    assert "pg_user1" in user_ids
+    assert "pg_user2" in user_ids
+    assert "pg_user3" in user_ids
+
+
+async def test_postgres_budget_not_found(pg_storage: PostgresStorageManager):
+    """Test getting a budget that doesn't exist."""
+    result = await pg_storage.get_budget("nonexistent")
+    assert result is None
+
+
+async def test_postgres_delete_nonexistent_budget(pg_storage: PostgresStorageManager):
+    """Test deleting a nonexistent budget doesn't error."""
+    await pg_storage.delete_budget("nonexistent")  # Should not raise

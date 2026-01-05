@@ -1,7 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 import llm_meter.providers.openai as openai
 from llm_meter.context import attribution_context
 from llm_meter.providers.openai import OpenAIClientInstrumenter
@@ -40,7 +38,6 @@ class MockAsyncStream:
             yield chunk
 
 
-@pytest.mark.asyncio
 async def test_openai_streaming_with_usage():
     # Setup mock storage callback
     storage_callback = AsyncMock()
@@ -84,7 +81,6 @@ async def test_openai_streaming_with_usage():
     assert record.status == "success"
 
 
-@pytest.mark.asyncio
 async def test_openai_streaming_fallback_counting(monkeypatch):
     # Mock tiktoken to avoid dependency issues during test if not installed
     mock_tiktoken = MagicMock()

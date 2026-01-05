@@ -1,11 +1,8 @@
-import pytest
-
 from llm_meter.core import LLMMeter
 from llm_meter.models import LLMUsage
 from llm_meter.storage.manager import StorageManager
 
 
-@pytest.mark.asyncio
 async def test_llm_meter_without_batching_uses_base_storage():
     # Ensure singleton reset
     LLMMeter._instance = None
@@ -20,7 +17,6 @@ async def test_llm_meter_without_batching_uses_base_storage():
     await meter.shutdown()
 
 
-@pytest.mark.asyncio
 async def test_storage_manager_record_batch():
     # Use in‑memory SQLite for isolation
     manager = StorageManager("sqlite+aiosqlite:///:memory:")
@@ -67,7 +63,6 @@ async def test_storage_manager_record_batch():
     await manager.close()
 
 
-@pytest.mark.asyncio
 async def test_storage_manager_record_batch_empty():
     """Calling record_batch with an empty list should be a no‑op and not raise."""
     manager = StorageManager("sqlite+aiosqlite:///:memory:")

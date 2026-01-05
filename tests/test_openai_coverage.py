@@ -1,8 +1,6 @@
 import logging
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from llm_meter.providers import openai
 from llm_meter.providers.openai import count_tokens, instrument_openai_call
 
@@ -54,7 +52,6 @@ def test_count_tokens_general_exception(monkeypatch, caplog):
         openai.tiktoken = old_tiktoken
 
 
-@pytest.mark.asyncio
 async def test_instrument_openai_call_streaming():
     # Target line 151 in openai.py
     storage_callback = AsyncMock()
